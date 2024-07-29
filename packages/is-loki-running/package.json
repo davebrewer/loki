@@ -1,6 +1,6 @@
 {
   "name": "@loki/is-loki-running",
-  "version": "0.32.0",
+  "version": "0.35.0",
   "description": "Loki test indicator",
   "keywords": [
     "loki"
@@ -16,7 +16,8 @@
   },
   "license": "MIT",
   "files": [
-    "src"
+    "src",
+    "*.d.ts"
   ],
   "main": "src/index.web.js",
   "react-native": "src/index.native.js",

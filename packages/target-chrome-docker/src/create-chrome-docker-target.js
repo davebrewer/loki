@@ -1,18 +1,18 @@
 const debug = require('debug')('loki:chrome:docker');
 const { execSync } = require('child_process');
 const execa = require('execa');
-const waitOn = require('wait-on');
+const waitPort = require('wait-port');
 const CDP = require('chrome-remote-interface');
 const getRandomPort = require('find-free-port-sync');
 const {
   ChromeError,
   ensureDependencyAvailable,
   getAbsoluteURL,
+  getLocalIPAddress,
+  createStaticServer,
 } = require('@loki/core');
 const { createChromeTarget } = require('@loki/target-chrome-core');
-const { getLocalIPAddress } = require('./get-local-ip-address');
 const { getNetworkHost } = require('./get-network-host');
-const { createStaticServer } = require('./create-static-server');
 
 const getExecutor = (dockerWithSudo) => (dockerPath, args) => {
   if (dockerWithSudo) {
@@ -22,28 +22,9 @@ const getExecutor = (dockerWithSudo) => (dockerPath, args) => {
   return execa(dockerPath, args);
 };
 
-const waitOnCDPAvailable = (host, port) =>
-  new Promise((resolve, reject) => {
-    waitOn(
-      {
-        resources: [`tcp:${host}:${port}`],
-        delay: 50,
-        interval: 100,
-        timeout: 5000,
-      },
-      (err) => {
-        if (err) {
-          reject(err);
-        } else {
-          resolve();
-        }
-      }
-    );
-  });
-
 function createChromeDockerTarget({
   baseUrl = 'http://localhost:6006',
-  chromeDockerImage = 'yukinying/chrome-headless-browser-stable:100.0.4896.127',
+  chromeDockerImage = 'yukinying/chrome-headless-browser-stable:118.0.5993.117',
   chromeFlags = ['--headless', '--disable-gpu', '--hide-scrollbars'],
   dockerNet = null,
   dockerWithSudo = false,
@@ -62,7 +43,7 @@ function createChromeDockerTarget({
   const execute = getExecutor(dockerWithSudo);
 
   if (!chromeDockerWithoutSeccomp) {
-    runArgs.push(`--security-opt=seccomp=${__dirname}/docker-seccomp.json`);
+    runArgs.push('--security-opt=seccomp=unconfined');
   }
   runArgs.push('--add-host=host.docker.internal:host-gateway');
 
@@ -74,7 +55,7 @@ function createChromeDockerTarget({
       );
     }
     if (isLocalFile) {
-      staticServerPort = getRandomPort();
+      staticServerPort = getRandomPort({ start: 1025 });
       staticServerPath = dockerUrl.substr('file:'.length);
       dockerUrl = `http://${ip}:${staticServerPort}`;
     } else {
@@ -151,7 +132,12 @@ function createChromeDockerTarget({
 
       host = await getNetworkHost(execute, dockerId);
       try {
-        await waitOnCDPAvailable(host, debuggerPort);
+        await waitPort({
+          host,
+          port: debuggerPort,
+          interval: 100,
+          timeout: 5000,
+        });
       } catch (error) {
         if (
           error.message.startsWith('Timed out waiting for') &&
